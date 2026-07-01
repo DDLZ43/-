@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>白沙小学教师个人课表查询</title>
+<style>
+* { -webkit-tap-highlight-color: transparent; box-sizing: border-box; margin:0; padding:0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f5f6fa; color: #333; }
+header { background: #07c160; color: white; padding: 16px; text-align: center; font-size: 18px; font-weight: 600; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.subtitle { text-align: center; font-size: 13px; color: #e8f5e9; margin-top: 4px; }
+.search-card { background: white; margin: 12px; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.input-wrapper { position: relative; margin-bottom: 12px; }
+#teacherInput { width: 100%; padding: 14px 16px; font-size: 16px; border: 1px solid #e0e0e0; border-radius: 8px; outline: none; -webkit-appearance: none; }
+#teacherInput:focus { border-color: #07c160; }
+.suggestions { position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #e0e0e0; border-radius: 8px; margin-top: 4px; max-height: 240px; overflow-y: auto; display: none; z-index: 50; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+.suggestion-item { padding: 14px 16px; cursor: pointer; border-bottom: 1px solid #f5f5f5; font-size: 15px; display: flex; align-items: center; }
+.suggestion-item:before { content: "👤"; margin-right: 10px; font-size: 18px; }
+.suggestion-item:active, .suggestion-item:hover { background: #f0f9f4; }
+.btn { width: 100%; padding: 14px; background: #07c160; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; -webkit-appearance: none; }
+.btn:active { background: #06ad56; transform: scale(0.98); }
+.result-card { background: white; margin: 12px; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); display: none; }
+.result-header { padding: 16px; background: #f8f9fa; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+.result-header h3 { font-size: 16px; color: #333; }
+.result-header .count { font-size: 13px; color: #07c160; background: #e8f5e9; padding: 4px 10px; border-radius: 20px; }
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 14px; }
+th { background: #07c160; color: white; padding: 12px 8px; font-weight: 600; white-space: nowrap; position: sticky; top: 0; }
+td { border: 1px solid #eee; padding: 10px 6px; text-align: center; vertical-align: middle; min-width: 100px; line-height: 1.5; }
+.period-col { background: #f8f9fa; font-weight: 600; position: sticky; left: 0; min-width: 50px; box-shadow: 2px 0 4px rgba(0,0,0,0.05); z-index: 10; }
+.empty-cell { color: #ccc; background: #fafafa; }
+.class-tag { display: block; font-size: 12px; color: #888; margin-top: 4px; }
+.empty-state { text-align: center; padding: 60px 20px; color: #999; }
+.empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+.teacher-tag { display: inline-block; background: #e8f5e9; color: #07c160; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 6px; }
+.footer { text-align: center; padding: 20px; font-size: 12px; color: #bbb; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>📚 白沙小学教师个人课表</div>
+  <div class="subtitle">输入姓名即可查询个人课表</div>
+</header>
+
+<div class="search-card">
+  <div class="input-wrapper">
+    <input type="text" id="teacherInput" placeholder="请输入教师姓名（如：王丽君）" autocomplete="off">
+    <div id="suggestions" class="suggestions"></div>
+  </div>
+  <button class="btn" onclick="generateSchedule()">🔍 查询课表</button>
+</div>
+
+<div id="resultCard" class="result-card">
+  <div class="result-header">
+    <h3>📋 课表详情</h3>
+    <span id="courseCount" class="count"></span>
+  </div>
+  <div class="table-scroll">
+    <div id="scheduleContainer"></div>
+  </div>
+</div>
+
+<div id="emptyState" class="empty-state" style="display:none;">
+  <div class="icon">😕</div>
+  <div id="emptyText">未找到该教师的课表</div>
+</div>
+
+<div class="footer">白沙小学教务系统</div>
+
+<script>
+// ===================== 数据配置区 =====================
+// 请把管理端「复制为在线版数据」生成的代码，粘贴到下面两行注释之间
+// 替换后这一行应该变成：const SCHEDULE_DATA = [{...}, {...}, ...];
+
+// ===== 粘贴数据开始 =====
+const SCHEDULE_DATA = [];
+// ===== 粘贴数据结束 =====
+
+// ===================== 程序逻辑 =====================
+const weekNames = ["星期一","星期二","星期三","星期四","星期五"];
+const periodNames = ["1","2","3","4","午休","5","6"];
+
+// 检查数据
+if (!SCHEDULE_DATA || SCHEDULE_DATA.length === 0) {
+  document.body.innerHTML = '<div style="padding:40px;text-align:center;color:#999;line-height:1.8;"><div style="font-size:48px;margin-bottom:16px;">⚙️</div><div style="font-size:16px;color:#333;font-weight:600;margin-bottom:8px;">数据未配置</div>请先用「管理端」解析课表并导出数据，<br>将代码粘贴到本文件的 SCHEDULE_DATA 位置。</div>';
+  throw new Error("数据未配置");
+}
+
+// 提取并排序教师列表
+const teacherList = [...new Set(SCHEDULE_DATA.map(r => r.teacher))].sort((a,b) => a.localeCompare(b, 'zh-CN'));
+
+const input = document.getElementById('teacherInput');
+const suggestionsBox = document.getElementById('suggestions');
+const resultCard = document.getElementById('resultCard');
+const scheduleContainer = document.getElementById('scheduleContainer');
+const emptyState = document.getElementById('emptyState');
+const emptyText = document.getElementById('emptyText');
+
+// 输入时实时检索
+input.addEventListener('input', function() {
+  const val = this.value.trim();
+  suggestionsBox.innerHTML = '';
+  if (!val) { suggestionsBox.style.display = 'none'; return; }
+  
+  const matches = teacherList.filter(t => t.includes(val));
+  if (matches.length === 0) { suggestionsBox.style.display = 'none'; return; }
+  
+  matches.slice(0, 15).forEach(name => {
+    const div = document.createElement('div');
+    div.className = 'suggestion-item';
+    div.innerHTML = '<span style="flex:1;">' + name + '</span><span class="teacher-tag">选择</span>';
+    div.onclick = function() {
+      input.value = name;
+      suggestionsBox.style.display = 'none';
+      generateSchedule();
+    };
+    suggestionsBox.appendChild(div);
+  });
+  suggestionsBox.style.display = 'block';
+});
+
+// 点击外部关闭建议
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.input-wrapper')) {
+    suggestionsBox.style.display = 'none';
+  }
+});
+
+// 回车键查询
+input.addEventListener('keypress', function(e) {
+  if (e.key === 'Enter') generateSchedule();
+});
+
+function generateSchedule() {
+  const name = input.value.trim();
+  if (!name) { input.focus(); return; }
+  
+  const records = SCHEDULE_DATA.filter(r => r.teacher === name);
+  
+  // 隐藏建议框
+  suggestionsBox.style.display = 'none';
+  
+  if (records.length === 0) {
+    resultCard.style.display = 'none';
+    emptyState.style.display = 'block';
+    emptyText.textContent = '未找到「' + name + '」的课表，请检查姓名';
+    return;
+  }
+  
+  emptyState.style.display = 'none';
+  resultCard.style.display = 'block';
+  document.getElementById('courseCount').textContent = '共 ' + records.length + ' 节课';
+  
+  // 构建矩阵
+  const matrix = {};
+  records.forEach(r => {
+    if (!matrix[r.period]) matrix[r.period] = {};
+    if (!matrix[r.period][r.week]) matrix[r.period][r.week] = [];
+    matrix[r.period][r.week].push({course: r.course, className: r.className});
+  });
+  
+  // 生成表格HTML
+  let html = '<table><thead><tr><th class="period-col">节次</th>';
+  weekNames.forEach(day => { html += '<th>' + day + '</th>'; });
+  html += '</tr></thead><tbody>';
+  
+  periodNames.forEach(period => {
+    html += '<tr><td class="period-col">' + period + '</td>';
+    weekNames.forEach(day => {
+      const items = matrix[period] && matrix[period][day] ? matrix[period][day] : [];
+      if (items.length > 0) {
+        html += '<td>' + items.map(it => it.course + '<span class="class-tag">' + it.className + '</span>').join('<br><br>') + '</td>';
+      } else {
+        html += '<td class="empty-cell">—</td>';
+      }
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  
+  scheduleContainer.innerHTML = html;
+}
+</script>
+</body>
+</html>
